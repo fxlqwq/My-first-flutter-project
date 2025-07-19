@@ -1,0 +1,666 @@
+import 'package:flutter/material.dart';
+import 'dart:math' as math;
+import '../models/spin_data.dart';
+import '../services/storage_service.dart    // 计算目标角度 - 让指针指向选中的扇形中心
+    double anglePerItem = 2 * math.pi / _currentSpinData.items.length;
+    
+    // 转盘绘制：第i个扇形的起始角度 = i * anglePerItem - π/2
+    // 第i个扇形的中心角度 = 起始角度 + anglePerItem/2
+    double itemStartAngle = selectedIndex * anglePerItem - math.pi / 2;
+    double itemCenterAngle = itemStartAngle + anglePerItem / 2;
+    
+    // 指针在顶部（-π/2位置），我们需要让选中扇形的中心旋转到指针位置
+    // 计算需要旋转的角度：从当前中心角度旋转到-π/2
+    double targetAngle = -math.pi / 2 - itemCenterAngle;
+    
+    // 规范化角度，确保在[0, 2π)范围内
+    targetAngle = targetAngle % (2 * math.pi);
+    if (targetAngle < 0) targetAngle += 2 * math.pi;idgets/spin_wheel.dart';
+import 'create_spin_screen.dart';
+
+class PointerPainter extends CustomPainter {
+  @override
+  void paint(Canvas canvas, Size size) {
+    // 绘制外层阴影
+    final shadowPaint = Paint()
+      ..color = Colors.black.withOpacity(0.3)
+      ..style = PaintingStyle.fill
+      ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 4);
+
+    final shadowPath = Path();
+    shadowPath.moveTo(size.width / 2 + 1, 3);
+    shadowPath.lineTo(size.width / 2 - 12 + 1, size.height - 5 + 3);
+    shadowPath.lineTo(size.width / 2 + 12 + 1, size.height - 5 + 3);
+    shadowPath.close();
+    canvas.drawPath(shadowPath, shadowPaint);
+
+    // 绘制箭头主体（渐变效果）
+    final gradient = LinearGradient(
+      begin: Alignment.topCenter,
+      end: Alignment.bottomCenter,
+      colors: [
+        Colors.red.shade400,
+        Colors.red.shade600,
+        Colors.red.shade800,
+      ],
+    );
+
+    final rect = Rect.fromLTWH(0, 0, size.width, size.height);
+    final paint = Paint()
+      ..shader = gradient.createShader(rect)
+      ..style = PaintingStyle.fill;
+
+    final path = Path();
+    path.moveTo(size.width / 2, 0);
+    path.lineTo(size.width / 2 - 12, size.height - 8);
+    path.lineTo(size.width / 2 + 12, size.height - 8);
+    path.close();
+    canvas.drawPath(path, paint);
+
+    // 绘制高光
+    final highlightPaint = Paint()
+      ..color = Colors.white.withOpacity(0.4)
+      ..style = PaintingStyle.fill;
+
+    final highlightPath = Path();
+    highlightPath.moveTo(size.width / 2, 2);
+    highlightPath.lineTo(size.width / 2 - 8, size.height - 12);
+    highlightPath.lineTo(size.width / 2 - 2, size.height - 12);
+    highlightPath.close();
+    canvas.drawPath(highlightPath, highlightPaint);
+
+    // 绘制边框
+    final borderPaint = Paint()
+      ..color = Colors.red.shade900
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 1.5;
+    canvas.drawPath(path, borderPaint);
+  }
+
+  @override
+  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
+}
+
+class SpinScreen extends StatefulWidget {
+  final SpinData spinData;
+
+  const SpinScreen({super.key, required this.spinData});
+
+  @override
+  State<SpinScreen> createState() => _SpinScreenState();
+}
+
+class _SpinScreenState extends State<SpinScreen> 
+    with TickerProviderStateMixin {
+  late AnimationController _animationController;
+  late Animation<double> _animation;
+  SpinItem? _selectedItem;
+  bool _isSpinning = false;
+  late SpinData _currentSpinData;
+
+  @override
+  void initState() {
+    super.initState();
+    _currentSpinData = widget.spinData;
+    _animationController = AnimationController(
+      duration: const Duration(seconds: 3),
+      vsync: this,
+    );
+    _animation = Tween<double>(
+      begin: 0.0,
+      end: 1.0,
+    ).animate(CurvedAnimation(
+      parent: _animationController,
+      curve: Curves.easeOutQuart,
+    ));
+  }
+
+  @override
+  void dispose() {
+    _animationController.dispose();
+    super.dispose();
+  }
+
+  void _spin() async {
+    if (_isSpinning) return;
+
+    setState(() {
+      _isSpinning = true;
+      _selectedItem = null;
+    });
+
+    // 计算权重总和
+    double totalWeight = _currentSpinData.items
+        .fold(0.0, (sum, item) => sum + item.weight);
+
+    // 生成随机数
+    double random = math.Random().nextDouble() * totalWeight;
+    
+    // 找到对应的项目
+    double currentWeight = 0.0;
+    SpinItem? selected;
+    int selectedIndex = 0;
+    for (int i = 0; i < _currentSpinData.items.length; i++) {
+      currentWeight += _currentSpinData.items[i].weight;
+      if (random <= currentWeight) {
+        selected = _currentSpinData.items[i];
+        selectedIndex = i;
+        break;
+      }
+    }
+
+    if (selected == null) {
+      selected = _currentSpinData.items.last;
+      selectedIndex = _currentSpinData.items.length - 1;
+    }
+
+    // 计算目标角度 - 让指针指向选中的扇形中心
+    double anglePerItem = 2 * math.pi / _currentSpinData.items.length;
+    
+    // 简化逻辑：转盘需要旋转，使第selectedIndex个扇形的中心对准顶部指针
+    // 由于第0个扇形已经在顶部中心，所以要旋转 -selectedIndex * anglePerItem
+    double targetAngle = -selectedIndex * anglePerItem;
+    
+    // 规范化角度到[0, 2π)范围
+    targetAngle = targetAngle % (2 * math.pi);
+    if (targetAngle < 0) targetAngle += 2 * math.pi;
+    
+    // 计算总旋转角度（多转几圈后停在目标位置）
+    double baseRotation = (math.Random().nextInt(3) + 5) * 2 * math.pi;
+    double totalRotation = baseRotation + targetAngle;
+
+    // 开始动画
+    _animation = Tween<double>(
+      begin: _animation.value,
+      end: _animation.value + totalRotation / (2 * math.pi),
+    ).animate(CurvedAnimation(
+      parent: _animationController,
+      curve: Curves.easeOutQuart,
+    ));
+
+    _animationController.reset();
+    await _animationController.forward();
+
+    // 保存结果
+    await _saveSpinResult(selected);
+
+    setState(() {
+      _selectedItem = selected;
+      _isSpinning = false;
+    });
+
+    // 显示结果
+    _showResult(selected);
+  }
+
+  Future<void> _saveSpinResult(SpinItem item) async {
+    // 保存转盘结果
+    final result = SpinResult(
+      itemId: item.id,
+      text: item.text,
+      timestamp: DateTime.now(),
+      spinDataId: _currentSpinData.id,
+    );
+    await StorageService.saveSpinResult(result);
+
+    // 更新项目统计
+    final updatedItems = _currentSpinData.items.map((spinItem) {
+      if (spinItem.id == item.id) {
+        return spinItem.copyWith(
+          hitCount: spinItem.hitCount + 1,
+          lastHit: DateTime.now(),
+        );
+      }
+      return spinItem;
+    }).toList();
+
+    // 更新转盘数据
+    _currentSpinData = _currentSpinData.copyWith(
+      items: updatedItems,
+      totalSpins: _currentSpinData.totalSpins + 1,
+      lastUsed: DateTime.now(),
+    );
+
+    await StorageService.saveSpinDataItem(_currentSpinData);
+  }
+
+  void _showResult(SpinItem item) {
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => Dialog(
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(20),
+        ),
+        child: Container(
+          padding: const EdgeInsets.all(24),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(20),
+            gradient: LinearGradient(
+              begin: Alignment.topCenter,
+              end: Alignment.bottomCenter,
+              colors: [
+                Colors.white,
+                Color(item.color).withOpacity(0.05),
+              ],
+            ),
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              // 成功图标动画
+              Container(
+                width: 80,
+                height: 80,
+                decoration: BoxDecoration(
+                  color: Color(item.color),
+                  shape: BoxShape.circle,
+                  boxShadow: [
+                    BoxShadow(
+                      color: Color(item.color).withOpacity(0.3),
+                      blurRadius: 15,
+                      offset: const Offset(0, 5),
+                    ),
+                  ],
+                ),
+                child: const Icon(
+                  Icons.stars,
+                  color: Colors.white,
+                  size: 40,
+                ),
+              ),
+              const SizedBox(height: 20),
+              const Text(
+                '🎉 恭喜您！',
+                style: TextStyle(
+                  fontSize: 24,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+              const SizedBox(height: 12),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                decoration: BoxDecoration(
+                  color: Color(item.color).withOpacity(0.1),
+                  borderRadius: BorderRadius.circular(20),
+                  border: Border.all(
+                    color: Color(item.color).withOpacity(0.3),
+                    width: 1,
+                  ),
+                ),
+                child: Text(
+                  item.text,
+                  style: TextStyle(
+                    fontSize: 20,
+                    fontWeight: FontWeight.bold,
+                    color: Color(item.color),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 16),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Icon(
+                    Icons.emoji_events,
+                    color: Colors.amber,
+                    size: 20,
+                  ),
+                  const SizedBox(width: 8),
+                  Text(
+                    '第 ${item.hitCount} 次抽中',
+                    style: TextStyle(
+                      fontSize: 14,
+                      color: Colors.grey[600],
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 24),
+              SizedBox(
+                width: double.infinity,
+                child: ElevatedButton(
+                  onPressed: () => Navigator.pop(context),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: Color(item.color),
+                    foregroundColor: Colors.white,
+                    padding: const EdgeInsets.symmetric(vertical: 12),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                  ),
+                  child: const Text(
+                    '太棒了！',
+                    style: TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(
+        title: Text(_currentSpinData.name),
+        backgroundColor: Theme.of(context).colorScheme.inversePrimary,
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.edit),
+            onPressed: () => _editSpinData(context),
+            tooltip: '编辑转盘',
+          ),
+          IconButton(
+            icon: const Icon(Icons.refresh),
+            onPressed: () => _resetSpinData(context),
+            tooltip: '重置数据',
+          ),
+        ],
+      ),
+      body: Container(
+        decoration: BoxDecoration(
+          gradient: LinearGradient(
+            begin: Alignment.topCenter,
+            end: Alignment.bottomCenter,
+            colors: [
+              Theme.of(context).colorScheme.primary.withOpacity(0.1),
+              Theme.of(context).colorScheme.background,
+            ],
+          ),
+        ),
+        child: Column(
+          children: [
+            // 转盘统计信息
+            Container(
+              margin: const EdgeInsets.all(16),
+              padding: const EdgeInsets.all(16),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(12),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withOpacity(0.1),
+                    blurRadius: 8,
+                    offset: const Offset(0, 2),
+                  ),
+                ],
+              ),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.spaceAround,
+                children: [
+                  _buildStatCard('总转数', _currentSpinData.totalSpins.toString(), Icons.casino),
+                  _buildStatCard('选项数', _currentSpinData.items.length.toString(), Icons.pie_chart),
+                  _buildStatCard('最近', _getLastSpinTime(), Icons.access_time),
+                ],
+              ),
+            ),
+            Expanded(
+              child: Center(
+                child: Stack(
+                  alignment: Alignment.center,
+                  children: [
+                    // 转盘（会旋转）
+                    AnimatedBuilder(
+                      animation: _animation,
+                      builder: (context, child) {
+                        return Transform.rotate(
+                          angle: _animation.value * 2 * math.pi,
+                          child: SpinWheel(
+                            items: _currentSpinData.items,
+                            size: 300,
+                          ),
+                        );
+                      },
+                    ),
+                    // 固定的指针（不会旋转）
+                    Positioned(
+                      top: 15,
+                      child: Container(
+                        width: 0,
+                        height: 0,
+                        child: CustomPaint(
+                          painter: PointerPainter(),
+                          size: const Size(35, 35),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+            Container(
+              padding: const EdgeInsets.all(24),
+              margin: const EdgeInsets.all(16),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(20),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withOpacity(0.1),
+                    blurRadius: 10,
+                    offset: const Offset(0, -2),
+                  ),
+                ],
+              ),
+              child: Column(
+                children: [
+                  if (_selectedItem != null)
+                    Container(
+                      padding: const EdgeInsets.all(20),
+                      margin: const EdgeInsets.only(bottom: 20),
+                      decoration: BoxDecoration(
+                        color: Color(_selectedItem!.color).withOpacity(0.1),
+                        borderRadius: BorderRadius.circular(16),
+                        border: Border.all(
+                          color: Color(_selectedItem!.color).withOpacity(0.3),
+                          width: 2,
+                        ),
+                      ),
+                      child: Column(
+                        children: [
+                          Icon(
+                            Icons.stars,
+                            color: Color(_selectedItem!.color),
+                            size: 32,
+                          ),
+                          const SizedBox(height: 8),
+                          const Text(
+                            '上次结果',
+                            style: TextStyle(
+                              fontSize: 14,
+                              fontWeight: FontWeight.w500,
+                              color: Colors.grey,
+                            ),
+                          ),
+                          const SizedBox(height: 4),
+                          Text(
+                            _selectedItem!.text,
+                            style: TextStyle(
+                              fontSize: 20,
+                              fontWeight: FontWeight.bold,
+                              color: Color(_selectedItem!.color),
+                            ),
+                          ),
+                          const SizedBox(height: 4),
+                          Text(
+                            '第 ${_selectedItem!.hitCount} 次抽中',
+                            style: TextStyle(
+                              fontSize: 12,
+                              color: Colors.grey[600],
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  SizedBox(
+                    width: double.infinity,
+                    height: 56,
+                    child: ElevatedButton(
+                      onPressed: _isSpinning ? null : _spin,
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: Theme.of(context).colorScheme.primary,
+                        foregroundColor: Colors.white,
+                        elevation: 4,
+                        shadowColor: Theme.of(context).colorScheme.primary.withOpacity(0.3),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(16),
+                        ),
+                      ),
+                      child: _isSpinning
+                          ? Row(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: [
+                                const SizedBox(
+                                  width: 20,
+                                  height: 20,
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 2,
+                                    valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                                  ),
+                                ),
+                                const SizedBox(width: 12),
+                                const Text(
+                                  '转盘中...',
+                                  style: TextStyle(
+                                    fontSize: 18,
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                ),
+                              ],
+                            )
+                          : Row(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: [
+                                const Icon(Icons.play_arrow, size: 24),
+                                const SizedBox(width: 8),
+                                const Text(
+                                  '开始转盘',
+                                  style: TextStyle(
+                                    fontSize: 18,
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                ),
+                              ],
+                            ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildStatCard(String label, String value, IconData icon) {
+    return Column(
+      children: [
+        Icon(icon, color: Theme.of(context).colorScheme.primary),
+        const SizedBox(height: 4),
+        Text(
+          value,
+          style: const TextStyle(
+            fontSize: 18,
+            fontWeight: FontWeight.bold,
+          ),
+        ),
+        Text(
+          label,
+          style: TextStyle(
+            fontSize: 12,
+            color: Colors.grey[600],
+          ),
+        ),
+      ],
+    );
+  }
+
+  String _getLastSpinTime() {
+    if (_currentSpinData.totalSpins == 0) return '未使用';
+    final now = DateTime.now();
+    final lastUsed = _currentSpinData.lastUsed;
+    final difference = now.difference(lastUsed);
+    
+    if (difference.inDays > 0) {
+      return '${difference.inDays}天前';
+    } else if (difference.inHours > 0) {
+      return '${difference.inHours}小时前';
+    } else if (difference.inMinutes > 0) {
+      return '${difference.inMinutes}分钟前';
+    } else {
+      return '刚刚';
+    }
+  }
+
+  void _editSpinData(BuildContext context) async {
+    final result = await Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => CreateSpinScreen(spinData: _currentSpinData),
+      ),
+    );
+    
+    if (result == true) {
+      // 重新加载数据
+      final updatedData = StorageService.getSpinDataList()
+          .firstWhere((data) => data.id == _currentSpinData.id);
+      setState(() {
+        _currentSpinData = updatedData;
+      });
+    }
+  }
+
+  void _resetSpinData(BuildContext context) {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('重置转盘数据'),
+        content: const Text('确定要重置所有转盘统计数据吗？此操作不可撤销。'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('取消'),
+          ),
+          TextButton(
+            onPressed: () async {
+              // 重置所有统计数据
+              final resetItems = _currentSpinData.items.map((item) => 
+                item.copyWith(hitCount: 0, lastHit: null)
+              ).toList();
+              
+              final resetData = _currentSpinData.copyWith(
+                items: resetItems,
+                totalSpins: 0,
+                lastUsed: DateTime.now(),
+              );
+              
+              await StorageService.saveSpinDataItem(resetData);
+              
+              // 清除转盘结果历史
+              await StorageService.clearSpinResults(_currentSpinData.id);
+              
+              setState(() {
+                _currentSpinData = resetData;
+                _selectedItem = null;
+              });
+              
+              Navigator.pop(context);
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(content: Text('数据已重置')),
+              );
+            },
+            child: const Text('确定'),
+          ),
+        ],
+      ),
+    );
+  }
+}

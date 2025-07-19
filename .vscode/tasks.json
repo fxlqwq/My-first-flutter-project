@@ -1,0 +1,13 @@
+{
+	"version": "2.0.0",
+	"tasks": [
+		{
+			"label": "构建APK",
+			"type": "shell",
+			"command": "export ANDROID_HOME=/opt/android-sdk && export PATH=$PATH:$ANDROID_HOME/tools:$ANDROID_HOME/platform-tools:/home/flutter/bin && flutter build apk",
+			"group": "build",
+			"problemMatcher": [],
+			"isBackground": false
+		}
+	]
+}

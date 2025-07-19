@@ -1,0 +1,5 @@
+--2025-07-17 09:09:41--  https://r1---sn-ni57rn7k.gvt1-cn.com/edgedl/android/studio/ide-zips/2025.1.1.14/android-studio-2025.1.1.14-linux.tar.gz?cms_redirect=yes
+Resolving r1---sn-ni57rn7k.gvt1-cn.com (r1---sn-ni57rn7k.gvt1-cn.com)... 180.163.150.130
+Connecting to r1---sn-ni57rn7k.gvt1-cn.com (r1---sn-ni57rn7k.gvt1-cn.com)|180.163.150.130|:443... connected.
+OpenSSL: error:0A000126:SSL routines::unexpected eof while reading
+Unable to establish SSL connection.
